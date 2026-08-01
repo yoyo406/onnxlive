@@ -51,11 +51,24 @@ export class Session {
   _nextId() { return ++this._id; }
 
   _spawn(name) {
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+      const msg = 'Contexte non sécurisé : les workers modules sont bloqués par le navigateur (HTTPS ou localhost requis). ' +
+        'Teste sur http://localhost:8080, ou déploie sur GitHub Pages (HTTPS).';
+      log.error('worker', `${name} : ${msg}`);
+      this.ui.onBanner?.('error', msg);
+    }
     const w = new Worker(workerUrl(name), { type: 'module' });
     w.onerror = (e) => {
-      log.error('worker', `Échec de chargement du worker ${name} (module/CDN ?)`, e.message);
+      // e.message peut être vide (SecurityError silencieux) — ajouter file/line aide à distinguer
+      // erreur réseau (CDN) vs blocage de contexte (module worker hors HTTPS/localhost).
+      log.error('worker', `Échec chargement worker ${name}`, {
+        message: e.message,
+        file: e.filename,
+        line: e.lineno,
+        col: e.colno,
+      });
       this._rejectAll(name, `worker ${name} : ${e.message || 'module worker error'}`);
-      this.ui.onBanner?.('error', `Worker ${name} injoignable (réseau/CDN ?).`);
+      this.ui.onBanner?.('error', `Worker ${name} injoignable.` + (window.isSecureContext ? ' (réseau/CDN ?)' : ' (contexte non sécurisé — utilise localhost ou HTTPS).'));
     };
     w.onmessage = (e) => this._onWorkerMessage(name, e.data);
     this.workers[name] = w;

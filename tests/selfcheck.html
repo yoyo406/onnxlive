@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OnnxLive — Selfcheck</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem;background:#111;color:#eee}
+  h1{font-size:1.3rem} h2{font-size:1rem;margin:1.2rem 0 .4rem}
+  .p{background:#1b1b1b;border:1px solid #333;border-radius:8px;padding:.6rem .8rem;margin:.35rem 0;font-size:.85rem}
+  .ok{color:#4caf50} .ko{color:#f44336} .run{color:#ffc107}
+  code{background:#222;padding:.1rem .3rem;border-radius:4px;font-size:.8rem}
+  #env{font-size:.8rem;color:#aaa;white-space:pre-wrap;word-break:break-all}
+  button{margin:.5rem .5rem .5rem 0;padding:.5rem 1rem;border-radius:6px;border:0;background:#2a6;color:#111;font-weight:600}
+</style>
+</head>
+<body>
+<h1>🔬 OnnxLive — auto-diagnostic</h1>
+<div id="env">chargement…</div>
+<button id="run">▶ Lancer les 8 tests</button>
+<h2>Résultats</h2>
+<div id="out"></div>
+<script>
+const out = document.getElementById('out');
+const env = document.getElementById('env');
+const log = (title, status, detail) => {
+  const d = document.createElement('div');
+  d.className = 'p';
+  d.innerHTML = `<b>${title}</b> — <span class="${status}">${status.toUpperCase()}</span>` +
+    (detail ? ` <br><code>${detail.replace(/</g,'&lt;')}</code>` : '');
+  out.appendChild(d);
+};
+const CDN = {
+  transformers: 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0/+esm',
+  browserWhisper: 'https://cdn.jsdelivr.net/npm/browser-whisper@1.1.0/+esm',
+  kokoro: 'https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm',
+};
+function workerImport(url, name) {
+  // worker qui importe un module CDN et renvoie OK/FAIL détaillé
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (r) => { if (!done) { done = true; resolve(r); } };
+    try {
+      const src = `import('${url}').then(()=>{self.postMessage('OK')}).catch(e=>{self.postMessage('FAIL: '+e.message+' @ '+(e.filename||'?')+':'+(e.lineno||'?'))})`;
+      const blob = new Blob([src], { type: 'text/javascript' });
+      const w = new Worker(URL.createObjectURL(blob), { type: 'module' });
+      w.onmessage = (e) => { w.terminate(); finish(e.data); };
+      w.onerror = (e) => { w.terminate(); finish('FAIL(load): ' + (e.message||'') + ' @ ' + (e.filename||'?') + ':' + (e.lineno||'?')); };
+      setTimeout(() => { w.terminate(); finish('TIMEOUT (10 s)'); }, 10000);
+    } catch (e) { finish('EXCEPTION: ' + e.message); }
+  });
+}
+function workerPlain() {
+  return new Promise((resolve) => {
+    try {
+      const w = new Worker(URL.createObjectURL(new Blob(['self.postMessage("OK")'], {type:'text/javascript'})));
+      w.onmessage = () => { w.terminate(); resolve('OK'); };
+      w.onerror = (e) => { w.terminate(); resolve('FAIL: ' + (e.message||'') + ' @ ' + (e.filename||'?')); };
+      setTimeout(() => resolve('TIMEOUT'), 8000);
+    } catch (e) { resolve('EXCEPTION: ' + e.message); }
+  });
+}
+async function probe(title, fn) {
+  log(title, 'run');
+  const r = await fn();
+  // si le <div> a déjà été remplacé par un résultat, on met à jour la dernière ligne
+  const last = out.lastElementChild;
+  const ok = typeof r === 'string' && r.startsWith('OK');
+  last.innerHTML = `<b>${title}</b> — <span class="${ok ? 'ok' : 'ko'}">${ok ? 'OK' : 'FAIL'}</span>` +
+    (r !== 'OK' ? ` <br><code>${String(r).replace(/</g,'&lt;')}</code>` : '');
+}
+document.getElementById('run').onclick = async () => {
+  out.innerHTML = '';
+  env.textContent = '🔎 environnement:\n' +
+    `- url: ${location.href}\n` +
+    `- isSecureContext: ${window.isSecureContext}\n` +
+    `- crossOriginIsolated: ${window.crossOriginIsolated}\n` +
+    `- ua: ${navigator.userAgent}\n` +
+    `- deviceMemory: ${navigator.deviceMemory ?? '?'} GB, cores: ${navigator.hardwareConcurrency ?? '?'}\n` +
+    `- WebGPU: ${'gpu' in navigator ? 'oui' : 'non'}\n` +
+    `- module workers: ${(() => { try { new Worker(URL.createObjectURL(new Blob([''], {type:'text/javascript'})), {type:'module'}); return 'supportés'; } catch(e) { return 'BLOQUÉS: ' + e.message; } })()}`;
+  await probe('P1 — worker classique (construction + postMessage)', workerPlain);
+  await probe('P2 — worker module local', () => new Promise((res) => {
+    try {
+      const w = new Worker(URL.createObjectURL(new Blob(['self.postMessage("OK")'], {type:'text/javascript'})), {type:'module'});
+      w.onmessage = () => { w.terminate(); res('OK'); };
+      w.onerror = (e) => { w.terminate(); res('FAIL: ' + (e.message||'') + ' @ ' + (e.filename||'?')); };
+      setTimeout(() => res('TIMEOUT'), 8000);
+    } catch (e) { res('EXCEPTION: ' + e.message); }
+  }));
+  await probe('P3 — worker module importe transformers@4.2.0 (CDN)', () => workerImport(CDN.transformers, 'transformers'));
+  await probe('P4 — worker module importe browser-whisper@1.1.0 (CDN)', () => workerImport(CDN.browserWhisper, 'browser-whisper'));
+  await probe('P5 — worker module importe kokoro-js@1.2.1 (CDN)', () => workerImport(CDN.kokoro, 'kokoro-js'));
+  await probe('P6 — fetch huggingface.co (modèle Qwen, HEAD)', async () => {
+    try {
+      const r = await fetch('https://huggingface.co/onnx-community/Qwen2.5-0.5B-Instruct/resolve/main/onnx/model_q4f16.onnx', { method: 'HEAD' });
+      return r.ok ? 'OK (HTTP ' + r.status + ')' : 'FAIL (HTTP ' + r.status + ')';
+    } catch (e) { return 'FAIL: ' + e.message; }
+  });
+  await probe('P7 — fetch jsdelivr vad-web dist (onnx VAD)', async () => {
+    try {
+      const r = await fetch('https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/dist/silero_vad_legacy.onnx', { method: 'HEAD' });
+      return r.ok ? 'OK (HTTP ' + r.status + ')' : 'FAIL (HTTP ' + r.status + ')';
+    } catch (e) { return 'FAIL: ' + e.message; }
+  });
+  await probe('P8 — fetch onnxruntime-web wasm (ORT 1.26-dev)', async () => {
+    try {
+      const r = await fetch('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/ort-wasm-simd-threaded.wasm', { method: 'HEAD' });
+      return r.ok ? 'OK (HTTP ' + r.status + ')' : 'FAIL (HTTP ' + r.status + ')';
+    } catch (e) { return 'FAIL: ' + e.message; }
+  });
+};
+// auto-run au chargement
+document.getElementById('run').click();
+</script>
+</body>
+</html>

@@ -53,7 +53,7 @@ ui.writeSettings(settings);
 ui.setProfileBadge(PROFILES[profile].label);
 ui.renderCaps(caps, profile);
 
-log.info('boot', `caps=${JSON.stringify(caps)} profil=${profile}`);
+log.info('boot', `url=${location.href} caps=${JSON.stringify(caps)} profil=${profile}`);
 
 // avertissements d'environnement (limitations documentées)
 if (!caps.isolated) {

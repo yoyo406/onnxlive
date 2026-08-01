@@ -61,12 +61,8 @@ export class Session {
     w.onerror = (e) => {
       // e.message peut être vide (SecurityError silencieux) — ajouter file/line aide à distinguer
       // erreur réseau (CDN) vs blocage de contexte (module worker hors HTTPS/localhost).
-      log.error('worker', `Échec chargement worker ${name}`, {
-        message: e.message,
-        file: e.filename,
-        line: e.lineno,
-        col: e.colno,
-      });
+      const detail = `${e.message || '(no message)'} @ ${e.filename || '?'}:${e.lineno ?? '?'}:${e.colno ?? '?'}`;
+      log.error('worker', `Échec chargement worker ${name} — ${detail}`);
       this._rejectAll(name, `worker ${name} : ${e.message || 'module worker error'}`);
       this.ui.onBanner?.('error', `Worker ${name} injoignable.` + (window.isSecureContext ? ' (réseau/CDN ?)' : ' (contexte non sécurisé — utilise localhost ou HTTPS).'));
     };

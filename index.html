@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1117">
+  <title>SmolMLive — assistant vocal local</title>
+  <link rel="stylesheet" href="./styles.css">
+  <!--
+    Import map : uniquement pour le thread principal (les Web Workers n'héritent
+    pas des import maps ; ils importent leurs libs via URL +esm absolues, voir js/workers/).
+    jsdelivr +esm résout les dépendances bare (rollup), compatible GH Pages sans build.
+  -->
+  <script type="importmap">
+  {
+    "imports": {
+      "@ricky0123/vad-web": "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.30/+esm"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <h1>SmolMLive</h1>
+      <span class="profile-badge" id="profile-badge" title="Profil matériel détecté">…</span>
+    </div>
+    <div class="header-right">
+      <span class="status-pill" id="status-pill" data-state="boot">Démarrage</span>
+      <button id="btn-settings" class="icon-btn" aria-label="Réglages" title="Réglages">⚙️</button>
+      <button id="btn-debug" class="icon-btn" aria-label="Debug" title="Panneau debug">🐞</button>
+    </div>
+  </header>
+
+  <!-- Bandeau erreur / avertissement -->
+  <div id="banner" class="banner hidden" role="alert"></div>
+
+  <main class="app-main">
+    <!-- Zone de conversation -->
+    <section id="transcript" class="transcript" aria-live="polite">
+      <div class="empty-state" id="empty-state">
+        <p>Appuie sur le micro et parle.</p>
+        <p class="hint">Tout tourne localement dans ton navigateur — aucun serveur, aucune API.</p>
+      </div>
+    </section>
+
+    <!-- Progression des téléchargements / initialisation -->
+    <section id="progress-panel" class="progress-panel hidden">
+      <div class="progress-row" data-model="llm">
+        <span class="progress-label">LLM</span>
+        <div class="progress-track"><div class="progress-fill" data-fill></div></div>
+        <span class="progress-text" data-text>—</span>
+      </div>
+      <div class="progress-row" data-model="asr">
+        <span class="progress-label">ASR</span>
+        <div class="progress-track"><div class="progress-fill" data-fill></div></div>
+        <span class="progress-text" data-text>—</span>
+      </div>
+      <div class="progress-row" data-model="tts">
+        <span class="progress-label">TTS</span>
+        <div class="progress-track"><div class="progress-fill" data-fill></div></div>
+        <span class="progress-text" data-text>—</span>
+      </div>
+      <div class="progress-row" data-model="vad">
+        <span class="progress-label">VAD</span>
+        <div class="progress-track"><div class="progress-fill" data-fill></div></div>
+        <span class="progress-text" data-text>—</span>
+      </div>
+    </section>
+
+    <!-- Saisie texte de secours (test sans micro) -->
+    <section class="text-input-row">
+      <input id="text-input" type="text" placeholder="Ou tape un message (mode test sans micro)" autocomplete="off">
+      <button id="btn-send" class="send-btn" aria-label="Envoyer">➤</button>
+    </section>
+
+    <!-- Barre de contrôle -->
+    <footer class="control-bar">
+      <button id="btn-mic" class="mic-btn" aria-label="Micro" title="Activer le micro">
+        <span class="mic-icon">🎙️</span>
+      </button>
+    </footer>
+  </main>
+
+  <!-- Panneau debug -->
+  <aside id="debug-panel" class="debug-panel hidden">
+    <div class="debug-head">
+      <h2>Debug</h2>
+      <button id="btn-debug-close" class="icon-btn">✕</button>
+    </div>
+    <section>
+      <h3>Capacités</h3>
+      <pre id="debug-caps"></pre>
+    </section>
+    <section>
+      <h3>Latences (ms) — à mesurer localement</h3>
+      <pre id="debug-metrics"></pre>
+    </section>
+    <section>
+      <h3>Logs</h3>
+      <pre id="debug-logs" class="debug-logs"></pre>
+    </section>
+  </aside>
+
+  <!-- Panneau réglages -->
+  <aside id="settings-panel" class="debug-panel hidden">
+    <div class="debug-head">
+      <h2>Réglages</h2>
+      <button id="btn-settings-close" class="icon-btn">✕</button>
+    </div>
+    <section>
+      <label>Profil modèle (force)</label>
+      <select id="set-profile">
+        <option value="auto">Auto (détection)</option>
+        <option value="desktop-webgpu">Desktop WebGPU</option>
+        <option value="desktop-wasm">Desktop WASM (mono-thread)</option>
+        <option value="mobile-webgpu">Mobile WebGPU</option>
+        <option value="mobile-wasm">Mobile WASM</option>
+      </select>
+    </section>
+    <section>
+      <label>Langue ASR</label>
+      <select id="set-language">
+        <option value="fr">Français</option>
+        <option value="en">English</option>
+        <option value="es">Español</option>
+        <option value="de">Deutsch</option>
+        <option value="it">Italiano</option>
+        <option value="pt">Português</option>
+        <option value="">Auto</option>
+      </select>
+    </section>
+    <section>
+      <label>Voix TTS (Kokoro)</label>
+      <select id="set-voice">
+        <option value="ff_siwis" selected>ff_siwis (FR)</option>
+        <option value="af_heart">af_heart (EN)</option>
+        <option value="am_michael">am_michael (EN)</option>
+        <option value="bm_george">bm_george (EN-UK)</option>
+        <option value="em_alex">em_alex (ES)</option>
+        <option value="pm_alex">pm_alex (PT)</option>
+      </select>
+    </section>
+    <section>
+      <label>TTS dtype / device</label>
+      <select id="set-tts">
+        <option value="q8-wasm" selected>q8 — wasm (86 MB, défaut)</option>
+        <option value="fp32-webgpu">fp32 — webgpu (163 MB, qualité)</option>
+      </select>
+    </section>
+    <section>
+      <label class="switch-label"><input type="checkbox" id="set-partial" checked> Transcription partielle (onSpeechOngoing)</label>
+    </section>
+    <section>
+      <label>Max tokens réponse</label>
+      <input type="number" id="set-maxtokens" value="200" min="32" max="1024" step="32">
+    </section>
+  </aside>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>

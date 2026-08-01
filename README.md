@@ -1,7 +1,9 @@
-# 🗣️ SmolMLive
+# 🗣️ OnnxLive
 
 Assistant vocal conversationnel **100 % local, 100 % navigateur** — architecture type GPT-Live / Gemini Live,
 sans backend, hébergeable sur **GitHub Pages** (statique), desktop **et** mobile.
+
+📦 Repo : <https://github.com/yoyo406/onnxlive> · 🌐 Live (une fois Pages activé) : <https://yoyo406.github.io/onnxlive/>
 
 ```
 parole → VAD (Silero) → ASR (Whisper) → LLM (SmolLM3-3B, streaming) → TTS (Kokoro-82M, streaming) → audio
@@ -57,9 +59,12 @@ Visites suivantes : instantané (cache), même **offline**.
 
 ## Déploiement GitHub Pages
 
-1. `git push` du dossier vers un repo (tous les chemins sont relatifs → project page OK).
-2. **Settings → Pages → Deploy from branch** `main` `/root`.
-3. Ou laisser le workflow fourni (`.github/workflows/deploy.yml`, Source : GitHub Actions).
+1. ✅ Repo créé et poussé : `https://github.com/yoyo406/onnxlive` (branch `main`).
+2. Activer Pages — **Settings → Pages → Deploy from branch** `main` `/root`, ou :
+   ```bash
+   gh api repos/yoyo406/onnxlive/pages -X POST -f build_type=workflow   # workflow fourni
+   ```
+3. Une fois activé : `https://yoyo406.github.io/onnxlive/` (tous les chemins sont relatifs → project page OK).
 
 Pas à pas complet + alternatives multi-thread (Netlify/Vercel + COOP/COEP) : [`docs/deployment.md`](docs/deployment.md).
 
@@ -72,6 +77,12 @@ Pas à pas complet + alternatives multi-thread (Netlify/Vercel + COOP/COEP) : [`
 | [`docs/manual-integration-test.md`](docs/manual-integration-test.md) | Protocole de test manuel + journal de mesures |
 | [`CHECKLIST.md`](CHECKLIST.md) | Checklist de vérification |
 | [`tests/`](tests/) | Tests unitaires (`npm test`) |
+
+## Statut
+
+- ✅ Code audité et corrigé (2026-08-01) — catégories 1 à 5 : worker LLM, VAD MicVAD réel, voix TTS, échelle de downgrade, docs
+- ✅ Tests unitaires : **9/9** (`npm test`), syntaxe validée sur tous les fichiers
+- 🚧 GitHub Pages : à activer (voir ci-dessus) — après activation, l'URL live fonctionne directement
 
 ## Limites connues (honnêtes)
 - **Performance** : aucun benchmark ne peut être garanti — tout dépend de l'appareil ; mesurer avec le panneau debug (⚠️ WASM mono-thread sur GitHub Pages).
